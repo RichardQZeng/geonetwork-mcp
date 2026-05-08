@@ -31,6 +31,7 @@ export interface GetRecordFormattersArgs {
 export interface ExportRecordArgs {
   uuid: string;
   formatter: string;
+  approved?: boolean;
 }
 
 export interface ListGroupsArgs {
@@ -105,12 +106,17 @@ export interface DeleteAttachmentArgs {
 export interface UploadFileToRecordArgs {
   metadataUuid: string;
   filePath: string;
-  visibility?: "PUBLIC" | "PRIVATE";
+  visibility?: "public" | "private" | "PUBLIC" | "PRIVATE";
   approved?: boolean;
+}
+
+export interface DeleteRecordArgs {
+  metadataUuid: string;
+  confirmTitle: string;
+  confirm: "DELETE";
+  withBackup?: boolean;
 }
 
 export interface HandlerConfig {
   maxSearchResults: number;
-  username: string;
-  password: string;
 }

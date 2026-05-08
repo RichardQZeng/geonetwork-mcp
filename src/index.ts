@@ -17,6 +17,7 @@ import fs from "fs";
 import { tools } from "./tools.js";
 import { ToolHandlers } from "./handlers.js";
 import { createSwaggerSpec, registerSwaggerDocs } from "./swagger.js";
+import { AuthManager } from "./auth.js";
 
 const CONFIG = {
   BASE_URL: process.env.BASE_URL,
@@ -26,8 +27,16 @@ const CONFIG = {
   RATE_LIMIT_WINDOW_MS: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "", 10),
   RATE_LIMIT_MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || "", 10),
   // Authentication for protected endpoints
-  CATALOGUE_USERNAME: process.env.CATALOGUE_USERNAME || "",
-  CATALOGUE_PASSWORD: process.env.CATALOGUE_PASSWORD || "",
+  CATALOGUE_USERNAME: process.env.CATALOGUE_USERNAME || process.env.GN_USERNAME || "",
+  CATALOGUE_PASSWORD: process.env.CATALOGUE_PASSWORD || process.env.GN_PASSWORD || "",
+  AUTH_MODE: process.env.GEONETWORK_AUTH_MODE || process.env.AUTH_MODE || "",
+  OIDC_ISSUER_URL: process.env.OIDC_ISSUER_URL || process.env.GN_KEYCLOAK_ISSUER || "",
+  OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID || process.env.GN_CLIENT_ID || "",
+  OIDC_CLIENT_SECRET: process.env.OIDC_CLIENT_SECRET || process.env.GN_CLIENT_SECRET || "",
+  OIDC_SCOPE: process.env.OIDC_SCOPE || "openid profile email",
+  OIDC_ACCESS_TOKEN: process.env.OIDC_ACCESS_TOKEN || process.env.GN_ACCESS_TOKEN || "",
+  OIDC_REFRESH_TOKEN: process.env.OIDC_REFRESH_TOKEN || process.env.GN_REFRESH_TOKEN || "",
+  DEVICE_CODE_TIMEOUT_SECONDS: parseInt(process.env.DEVICE_CODE_TIMEOUT_SECONDS || "300", 10),
   // Upload basket configuration
   UPLOAD_DIR: process.env.UPLOAD_DIR || "./uploads",
   MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE || "104857600", 10), // 100MB default
@@ -110,18 +119,10 @@ class GeoNetworkMcpServer {
     this.app = express();
     this.setupExpress();
 
-    // Build headers with optional authentication
     const headers: Record<string, string> = {
       Accept: "application/json",
       "Content-Type": "application/json",
     };
-
-    // Add Basic Auth if credentials are configured
-    if (CONFIG.CATALOGUE_USERNAME && CONFIG.CATALOGUE_PASSWORD) {
-      const auth = Buffer.from(`${CONFIG.CATALOGUE_USERNAME}:${CONFIG.CATALOGUE_PASSWORD}`).toString("base64");
-      headers.Authorization = `Basic ${auth}`;
-      console.log(`[Auth] Using Basic Auth for user: ${CONFIG.CATALOGUE_USERNAME}`);
-    }
 
     const axiosInstance = axios.create({
       baseURL: CONFIG.BASE_URL,
@@ -129,10 +130,23 @@ class GeoNetworkMcpServer {
       timeout: CONFIG.TIMEOUT,
     });
 
-    this.handlers = new ToolHandlers(axiosInstance, {
-      maxSearchResults: CONFIG.MAX_SEARCH_RESULTS,
+    const authManager = new AuthManager({
       username: CONFIG.CATALOGUE_USERNAME,
       password: CONFIG.CATALOGUE_PASSWORD,
+      mode: CONFIG.AUTH_MODE,
+      oidcIssuerUrl: CONFIG.OIDC_ISSUER_URL,
+      oidcClientId: CONFIG.OIDC_CLIENT_ID,
+      oidcClientSecret: CONFIG.OIDC_CLIENT_SECRET,
+      oidcScope: CONFIG.OIDC_SCOPE,
+      deviceCodeTimeoutSeconds: CONFIG.DEVICE_CODE_TIMEOUT_SECONDS,
+      accessToken: CONFIG.OIDC_ACCESS_TOKEN,
+      refreshToken: CONFIG.OIDC_REFRESH_TOKEN,
+    });
+
+    console.log(`[Auth] Mode: ${authManager.mode}`);
+
+    this.handlers = new ToolHandlers(axiosInstance, authManager, {
+      maxSearchResults: CONFIG.MAX_SEARCH_RESULTS,
     });
 
     this.setupErrorHandling();
@@ -523,6 +537,7 @@ class GeoNetworkMcpServer {
         delete_record_tags: () => this.handlers.deleteRecordTags(args),
         get_attachments: () => this.handlers.getAttachments(args),
         delete_attachment: () => this.handlers.deleteAttachment(args),
+        delete_record: () => this.handlers.deleteRecord(args),
         upload_file_to_record: () => this.handlers.uploadFileToRecord(args),
       };
 

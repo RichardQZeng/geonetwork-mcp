@@ -21,15 +21,22 @@ import {
   GetAttachmentsArgs,
   DeleteAttachmentArgs,
   UploadFileToRecordArgs,
+  DeleteRecordArgs,
   ToolResponse,
   HandlerConfig,
 } from "./types.js";
+import { AuthManager } from "./auth.js";
 
 export class ToolHandlers {
   private config: HandlerConfig;
 
-  constructor(private axiosInstance: AxiosInstance, config: HandlerConfig) {
+  constructor(private axiosInstance: AxiosInstance, private auth: AuthManager, config: HandlerConfig) {
     this.config = config;
+    this.axiosInstance.interceptors.request.use(async (requestConfig) => {
+      const authHeaders = await this.auth.getAuthHeaders();
+      requestConfig.headers.set(authHeaders);
+      return requestConfig;
+    });
   }
 
   private formatResponse(data: any, isRaw = false): ToolResponse {
@@ -44,7 +51,7 @@ export class ToolHandlers {
   }
 
   private hasCredentials(): boolean {
-    return Boolean(this.config.username && this.config.password);
+    return this.auth.hasAuth();
   }
 
   private authRequiredResponse(action: string): ToolResponse {
@@ -52,7 +59,7 @@ export class ToolHandlers {
       content: [
         {
           type: "text",
-          text: `Error: Authentication required for ${action}. Please set CATALOGUE_USERNAME and CATALOGUE_PASSWORD in your .env file.`,
+          text: this.auth.authRequiredMessage(action),
         },
       ],
       isError: true,
@@ -202,10 +209,11 @@ export class ToolHandlers {
   }
 
   async exportRecord(args: ExportRecordArgs): Promise<ToolResponse> {
-    const { uuid, formatter } = args;
+    const { uuid, formatter, approved = true } = args;
+    const accept = formatter.toLowerCase() === "xml" ? "application/xml, text/xml, */*" : "*/*";
     const response = await this.axiosInstance.get(
       `/records/${uuid}/formatters/${formatter}`,
-      { responseType: "text" }
+      { params: { approved }, responseType: "text", headers: { Accept: accept } }
     );
 
     return this.formatResponse(response.data, true);
@@ -232,7 +240,7 @@ export class ToolHandlers {
 
   async getRelatedRecords(args: GetRelatedRecordsArgs): Promise<ToolResponse> {
     const { uuid, type } = args;
-    const response = await this.axiosInstance.get(`/related/${uuid}`, {
+    const response = await this.axiosInstance.get(`/records/${uuid}/related`, {
       ...(type && { params: { type } }),
     });
 
@@ -316,6 +324,13 @@ export class ToolHandlers {
       hasCategoryOfSource = true,
     } = args;
 
+    if (!group) {
+      return {
+        content: [{ type: "text", text: "Error: duplicate_record requires a target group value for GeoNetwork /records/duplicate." }],
+        isError: true,
+      };
+    }
+
     const params: Record<string, any> = {
       sourceUuid: metadataUuid,
       ...(group && { group }),
@@ -324,14 +339,14 @@ export class ToolHandlers {
       ...(!hasCategoryOfSource && { hasCategoryOfSource: false }),
     };
 
-    const { cookieHeader } = await this.getAuthenticatedSession();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders();
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     try {
       const response = await axios.put(`${baseURL}/records/duplicate`, null, {
         params,
         headers: {
-          Cookie: cookieHeader,
+          ...authenticatedHeaders,
           Accept: "application/json",
           "Content-Type": "application/json",
         },
@@ -351,7 +366,7 @@ export class ToolHandlers {
           try {
             // Try direct API call first
             const recordResponse = await axios.get(`${baseURL}/records/${newId}`, {
-              headers: { Cookie: cookieHeader, Accept: "application/json" },
+              headers: { ...(await this.auth.getAuthHeaders()), Accept: "application/json" },
             });
             newUuid = recordResponse.data?.uuid || recordResponse.data?.metadataUuid || recordResponse.data?.metadataIdentifier;
             if (newUuid) {
@@ -402,111 +417,12 @@ export class ToolHandlers {
     }
   }
 
-  /**
-   * Helper method to authenticate and get session cookies.
-   * Tries signin first, then falls back to /site/info and /me to obtain JSESSIONID + XSRF-TOKEN.
-   */
-  private async getAuthenticatedSession(): Promise<{
-    cookieHeader: string;
-    xsrfToken: string;
-  }> {
+  private async getAuthenticatedHeaders(): Promise<Record<string, string>> {
     if (!this.hasCredentials()) {
       throw new Error("Authentication credentials are not configured.");
     }
-
     const baseURL = this.axiosInstance.defaults.baseURL || "";
-    const catalogueURL = baseURL.replace("/srv/api", "");
-
-    let gnSessionId = "";
-    let jsSessionId = "";
-    let xsrfToken = "";
-
-    // Step 1: Sign in to get session cookies
-    const signinUrl = `${catalogueURL}/api/user/signin`;
-    console.log(`[Auth] Signing in at: ${signinUrl}`);
-
-    const formData = new URLSearchParams();
-    formData.append("username", this.config.username);
-    formData.append("password", this.config.password);
-
-    try {
-      const signinResponse = await axios.post(signinUrl, formData.toString(), {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json, text/html",
-        },
-        timeout: 10000,
-        maxRedirects: 0,
-        validateStatus: (status: number) => status < 400 || status === 302,
-      });
-      console.log(`[Auth] Signin → ${signinResponse.status}, Location: ${signinResponse.headers["location"] || "none"}`);
-      console.log(`[Auth] Signin cookies: ${JSON.stringify(signinResponse.headers["set-cookie"])}`);
-      for (const cookie of signinResponse.headers["set-cookie"] || []) {
-        if (cookie.includes("GNSESSIONID=")) gnSessionId = cookie.split("GNSESSIONID=")[1].split(";")[0];
-        if (cookie.includes("JSESSIONID=")) jsSessionId = cookie.split("JSESSIONID=")[1].split(";")[0];
-        if (cookie.includes("XSRF-TOKEN=")) xsrfToken = cookie.split("XSRF-TOKEN=")[1].split(";")[0];
-      }
-    } catch (error: any) {
-      console.log(`[Auth] Signin failed, trying fallback: ${error.message}`);
-    }
-
-    // Step 2: Fallback — GET /site/info to obtain JSESSIONID + XSRF-TOKEN
-    if (!jsSessionId || !xsrfToken) {
-      console.log(`[Auth] Fetching session via /site/info...`);
-      try {
-        const siteResponse = await axios.get(`${baseURL}/site/info`, {
-          headers: {
-            Accept: "application/json",
-            Cookie: gnSessionId ? `GNSESSIONID=${gnSessionId}` : "",
-          },
-          timeout: 10000,
-        });
-        for (const cookie of siteResponse.headers["set-cookie"] || []) {
-          if (cookie.includes("JSESSIONID=")) jsSessionId = cookie.split("JSESSIONID=")[1].split(";")[0];
-          if (cookie.includes("XSRF-TOKEN=")) xsrfToken = cookie.split("XSRF-TOKEN=")[1].split(";")[0];
-        }
-        console.log(`[Auth] /site/info → JSESSIONID=${!!jsSessionId}, XSRF=${!!xsrfToken}`);
-      } catch (error: any) {
-        console.log(`[Auth] /site/info fallback failed: ${error.message}`);
-      }
-    }
-
-    // Step 3: Fallback — GET /me with Basic Auth
-    if (!xsrfToken) {
-      console.log(`[Auth] Trying /me with Basic Auth...`);
-      const cookieForMe = [
-        jsSessionId ? `JSESSIONID=${jsSessionId}` : "",
-        gnSessionId ? `GNSESSIONID=${gnSessionId}` : "",
-      ].filter(Boolean).join("; ");
-      try {
-        const meResponse = await axios.get(`${baseURL}/me`, {
-          headers: {
-            Accept: "application/json",
-            Cookie: cookieForMe,
-            Authorization: `Basic ${Buffer.from(`${this.config.username}:${this.config.password}`).toString("base64")}`,
-          },
-          timeout: 10000,
-          validateStatus: () => true,
-        });
-        for (const cookie of meResponse.headers["set-cookie"] || []) {
-          if (cookie.includes("XSRF-TOKEN=")) xsrfToken = cookie.split("XSRF-TOKEN=")[1].split(";")[0];
-          if (cookie.includes("JSESSIONID=")) jsSessionId = cookie.split("JSESSIONID=")[1].split(";")[0];
-          if (cookie.includes("GNSESSIONID=")) gnSessionId = cookie.split("GNSESSIONID=")[1].split(";")[0];
-        }
-        console.log(`[Auth] /me → ${meResponse.status}, XSRF=${!!xsrfToken}`);
-      } catch (error: any) {
-        console.log(`[Auth] /me fallback failed: ${error.message}`);
-      }
-    }
-
-    const cookieParts: string[] = [];
-    if (jsSessionId) cookieParts.push(`JSESSIONID=${jsSessionId}`);
-    if (gnSessionId) cookieParts.push(`GNSESSIONID=${gnSessionId}`);
-    if (xsrfToken) cookieParts.push(`XSRF-TOKEN=${xsrfToken}`);
-    const cookieHeader = cookieParts.join("; ");
-
-    console.log(`[Auth] Session ready: JSESSIONID=${!!jsSessionId}, GNSESSIONID=${!!gnSessionId}, XSRF=${!!xsrfToken}`);
-    return { cookieHeader, xsrfToken };
+    return this.auth.getCsrfHeaders(baseURL);
   }
 
   async updateRecord(args: UpdateRecordArgs): Promise<ToolResponse> {
@@ -524,7 +440,7 @@ export class ToolHandlers {
 
     console.log(`[UpdateRecord] UUID: ${uuid}, XPath: ${xpath}, Operation: ${operation}`);
 
-    const { cookieHeader } = await this.getAuthenticatedSession();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders();
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     // Build the batch editing request body
@@ -562,7 +478,7 @@ export class ToolHandlers {
             updateDateStamp: updateDateStamp.toString(),
           },
           headers: {
-            Cookie: cookieHeader,
+            ...authenticatedHeaders,
             Accept: "application/json",
             "Content-Type": "application/json",
           },
@@ -617,12 +533,11 @@ export class ToolHandlers {
         // Check if we have credentials
         if (this.hasCredentials()) {
           try {
-            const { cookieHeader } = await this.getAuthenticatedSession();
             const baseURL = this.axiosInstance.defaults.baseURL || "";
 
             const directResponse = await axios.get(`${baseURL}/records/${id}`, {
               headers: {
-                Cookie: cookieHeader,
+                ...(await this.auth.getAuthHeaders()),
                 Accept: "application/json",
               },
             });
@@ -685,7 +600,7 @@ export class ToolHandlers {
 
     console.log(`[UpdateRecordTitle] UUID: ${uuid}, New Title: ${title}`);
 
-    const { cookieHeader } = await this.getAuthenticatedSession();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders();
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     // First, detect the schema by fetching the record's XML
@@ -693,7 +608,7 @@ export class ToolHandlers {
     try {
       const xmlResponse = await axios.get(`${baseURL}/records/${uuid}/formatters/xml`, {
         headers: {
-          Cookie: cookieHeader,
+          ...(await this.auth.getAuthHeaders()),
           Accept: "application/xml",
         },
       });
@@ -741,7 +656,7 @@ export class ToolHandlers {
             updateDateStamp: "true",
           },
           headers: {
-            Cookie: cookieHeader,
+            ...authenticatedHeaders,
             Accept: "application/json",
             "Content-Type": "application/json",
           },
@@ -771,7 +686,7 @@ export class ToolHandlers {
 
     console.log(`[AddRecordTags] UUID: ${uuid}, Tags: ${tags.join(", ")}`);
 
-    const { cookieHeader } = await this.getAuthenticatedSession();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders();
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     try {
@@ -782,7 +697,7 @@ export class ToolHandlers {
         null,
         {
           headers: {
-            Cookie: cookieHeader,
+            ...authenticatedHeaders,
             Accept: "application/json",
           },
         }
@@ -810,7 +725,7 @@ export class ToolHandlers {
 
     console.log(`[DeleteRecordTags] UUID: ${uuid}, Tags: ${tags.join(", ")}`);
 
-    const { cookieHeader } = await this.getAuthenticatedSession();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders();
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     try {
@@ -819,7 +734,7 @@ export class ToolHandlers {
         `${baseURL}/records/${uuid}/tags?${qs}`,
         {
           headers: {
-            Cookie: cookieHeader,
+            ...authenticatedHeaders,
             Accept: "application/json",
           },
         }
@@ -866,11 +781,12 @@ export class ToolHandlers {
       return this.authRequiredResponse("delete_attachment");
     }
 
-    const { metadataUuid, resourceId, approved = false } = args;
+    const { metadataUuid, approved = false } = args;
+    const resourceId = args.resourceId.split("/").pop() || args.resourceId;
 
     console.log(`[DeleteAttachment] UUID: ${metadataUuid}, Resource ID: ${resourceId}`);
 
-    const { cookieHeader } = await this.getAuthenticatedSession();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders();
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     try {
@@ -881,7 +797,7 @@ export class ToolHandlers {
             approved,
           },
           headers: {
-            Cookie: cookieHeader,
+            ...authenticatedHeaders,
             Accept: "application/json",
           },
         }
@@ -899,12 +815,91 @@ export class ToolHandlers {
     }
   }
 
+  async deleteRecord(args: DeleteRecordArgs): Promise<ToolResponse> {
+    if (!this.hasCredentials()) {
+      return this.authRequiredResponse("delete_record");
+    }
+
+    const { metadataUuid, confirmTitle, confirm, withBackup = true } = args;
+    if (confirm !== "DELETE") {
+      return {
+        content: [{ type: "text", text: "Error: delete_record requires confirm to be exactly 'DELETE'." }],
+        isError: true,
+      };
+    }
+
+    const searchResponse = await this.axiosInstance.post("/search/records/_search", {
+      query: { term: { uuid: metadataUuid } },
+      size: 5,
+    });
+    const hits = searchResponse.data?.hits?.hits || [];
+    const matchingHits = hits.filter((hit: any) => hit?._source?.uuid === metadataUuid);
+    if (matchingHits.length !== 1) {
+      return {
+        content: [{ type: "text", text: `Error: expected exactly one record for UUID ${metadataUuid}, found ${matchingHits.length}. Delete aborted.` }],
+        isError: true,
+      };
+    }
+
+    const source = matchingHits[0]._source || {};
+    const title = source.resourceTitleObject?.default ?? source.resourceTitle ?? source.title ?? "";
+    if (title !== confirmTitle) {
+      return {
+        content: [{ type: "text", text: `Error: title confirmation mismatch. Current title is "${title}". Delete aborted.` }],
+        isError: true,
+      };
+    }
+
+    const authenticatedHeaders = await this.getAuthenticatedHeaders();
+    const baseURL = this.axiosInstance.defaults.baseURL || "";
+    let deleteStatus = 0;
+    let deleteDetails: any;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const deleteResponse = await axios.delete(`${baseURL}/records/${metadataUuid}`, {
+        params: { withBackup },
+        headers: {
+          ...authenticatedHeaders,
+          Accept: "application/json",
+        },
+        validateStatus: () => true,
+      });
+      deleteStatus = deleteResponse.status;
+      deleteDetails = deleteResponse.data;
+      if (deleteResponse.status === 204) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    const verifyResponse = await this.axiosInstance.post("/search/records/_search", {
+      query: { term: { uuid: metadataUuid } },
+      size: 1,
+    });
+    const remainingHits = (verifyResponse.data?.hits?.hits || []).filter((hit: any) => hit?._source?.uuid === metadataUuid);
+
+    if (deleteStatus !== 204 && remainingHits.length > 0) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ success: false, status: deleteStatus, details: deleteDetails, remainingHits: remainingHits.length }, null, 2) }],
+        isError: true,
+      };
+    }
+
+    return this.formatResponse({
+      success: true,
+      message: `Record ${metadataUuid} deleted`,
+      deletedTitle: title,
+      withBackup,
+      deleteStatus,
+      remainingHits: remainingHits.length,
+    });
+  }
+
   async uploadFileToRecord(args: UploadFileToRecordArgs): Promise<ToolResponse> {
     if (!this.hasCredentials()) {
       return this.authRequiredResponse("upload_file_to_record");
     }
 
-    const { metadataUuid, filePath, visibility = "PUBLIC", approved = false } = args;
+    const { metadataUuid, filePath, visibility = "public", approved = false } = args;
 
     console.log(`[UploadFileToRecord] UUID: ${metadataUuid}, File: ${filePath}`);
 
@@ -925,7 +920,7 @@ export class ToolHandlers {
     const stats = fs.statSync(filePath);
     const filename = path.basename(filePath);
 
-    const { cookieHeader, xsrfToken } = await this.getAuthenticatedSession();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders();
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     try {
@@ -937,22 +932,18 @@ export class ToolHandlers {
       // Get form headers (includes Content-Type with boundary)
       const formHeaders = formData.getHeaders();
 
-      // Apache LDAP requires Basic Auth on the attachments POST endpoint.
-      // Session cookies alone are not sufficient — we must include the Authorization header.
       const response = await axios.post(
         `${baseURL}/records/${metadataUuid}/attachments`,
         formData,
         {
           params: {
-            visibility,
+            visibility: visibility.toLowerCase(),
             approved,
           },
           headers: {
             ...formHeaders,
-            Cookie: cookieHeader,
-            "X-XSRF-TOKEN": xsrfToken || "",
+            ...authenticatedHeaders,
             Accept: "application/json",
-            Authorization: `Basic ${Buffer.from(`${this.config.username}:${this.config.password}`).toString("base64")}`,
           },
           maxContentLength: Infinity,
           maxBodyLength: Infinity,

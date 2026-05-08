@@ -98,6 +98,11 @@ export const tools: Tool[] = [
           type: "string",
           description: "The formatter/format to use (e.g., 'xml', 'pdf', 'full_view')",
         },
+        approved: {
+          type: "boolean",
+          description: "Use approved version or not (default: true)",
+          default: true,
+        },
       },
       required: ["uuid", "formatter"],
     },
@@ -215,7 +220,7 @@ export const tools: Tool[] = [
         },
         group: {
           type: "string",
-          description: "Target group for the duplicated record (optional)",
+          description: "Target group for the duplicated record",
         },
         isChildOfSource: {
           type: "boolean",
@@ -232,7 +237,7 @@ export const tools: Tool[] = [
           default: true,
         },
       },
-      required: ["metadataUuid"],
+      required: ["metadataUuid", "group"],
     },
   },
   {
@@ -392,6 +397,34 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: "delete_record",
+    description: "Delete a metadata record after verifying its UUID and title. Requires authentication, explicit confirm='DELETE', and defaults to withBackup=true.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        metadataUuid: {
+          type: "string",
+          description: "The UUID of the metadata record to delete",
+        },
+        confirmTitle: {
+          type: "string",
+          description: "Exact current record title required as a safety check before deletion",
+        },
+        confirm: {
+          type: "string",
+          enum: ["DELETE"],
+          description: "Must be exactly 'DELETE' to confirm record deletion",
+        },
+        withBackup: {
+          type: "boolean",
+          description: "Ask GeoNetwork to create a backup before deletion (default: true)",
+          default: true,
+        },
+      },
+      required: ["metadataUuid", "confirmTitle", "confirm"],
+    },
+  },
+  {
     name: "upload_file_to_record",
     description: "Upload a file from your local filesystem directly to a metadata record as an attachment. The file will be uploaded as binary data to GeoNetwork. Requires authentication.",
     inputSchema: {
@@ -407,9 +440,9 @@ export const tools: Tool[] = [
         },
         visibility: {
           type: "string",
-          enum: ["PUBLIC", "PRIVATE"],
-          description: "The sharing policy for the file (default: PUBLIC)",
-          default: "PUBLIC",
+          enum: ["public", "private", "PUBLIC", "PRIVATE"],
+          description: "The sharing policy for the file (default: public)",
+          default: "public",
         },
         approved: {
           type: "boolean",
