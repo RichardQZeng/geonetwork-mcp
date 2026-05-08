@@ -483,8 +483,17 @@ class GeoNetworkMcpServer {
     // Standard MCP Streamable HTTP endpoint - POST for messages
     this.app.post("/", (req, res) => handleMCPRequest(req, res, req.body));
 
-    // GET endpoint for SSE streams (optional, for server-initiated messages)
-    this.app.get("/", (req, res) => handleMCPRequest(req, res, null));
+    // GET endpoint for SSE streams. Browser navigation requests do not send
+    // Accept: text/event-stream, so route them to the interactive UI instead.
+    this.app.get("/", (req, res) => {
+      const acceptHeader = req.get("accept") || "";
+
+      if (acceptHeader.includes("text/event-stream")) {
+        return handleMCPRequest(req, res, null);
+      }
+
+      res.redirect(302, "/playground");
+    });
   }
 
   private async handleToolCall(request: any) {
