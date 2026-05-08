@@ -130,7 +130,7 @@ export class AuthManager {
     }
 
     if (!this.config.oidcIssuerUrl || !this.config.oidcClientId) {
-      throw new Error("Device Code auth requires OIDC_ISSUER_URL/GN_KEYCLOAK_ISSUER and OIDC_CLIENT_ID/GN_CLIENT_ID.");
+      throw new Error("Device Code auth requires OIDC_ISSUER_URL and OIDC_CLIENT_ID.");
     }
 
     const discovery = await this.discover();

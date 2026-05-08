@@ -33,11 +33,11 @@ const requiredEnv = (name: string, fallback?: string): string => {
   return value;
 };
 
-const issuerUrl = requiredEnv("OIDC_ISSUER_URL", "GN_KEYCLOAK_ISSUER").replace(/\/$/, "");
-const clientId = requiredEnv("OIDC_CLIENT_ID", "GN_CLIENT_ID");
-const clientSecret = process.env.OIDC_CLIENT_SECRET || process.env.GN_CLIENT_SECRET || "";
+const issuerUrl = requiredEnv("OIDC_ISSUER_URL").replace(/\/$/, "");
+const clientId = requiredEnv("OIDC_CLIENT_ID");
+const clientSecret = process.env.OIDC_CLIENT_SECRET || "";
 const scope = process.env.OIDC_SCOPE || "openid profile email";
-const geoNetworkApiUrl = (process.env.BASE_URL || requiredEnv("GN_ME_URL").replace(/\/me\/?$/, "")).replace(/\/$/, "");
+const geoNetworkApiUrl = requiredEnv("BASE_URL").replace(/\/$/, "");
 const pollTimeoutSeconds = Number(process.env.DEVICE_CODE_TIMEOUT_SECONDS || "300");
 
 const formEncode = (values: Record<string, string>) => new URLSearchParams(values).toString();

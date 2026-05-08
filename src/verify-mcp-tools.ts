@@ -15,24 +15,24 @@ type VerificationResult = {
 };
 
 const sourceUuid = process.env.VERIFY_SOURCE_UUID || process.argv[3] || "36a42c4c-aa46-43af-847f-7c5ed9682ceb";
-const requestedMode = process.argv[2] || process.env.GEONETWORK_AUTH_MODE || process.env.AUTH_MODE || "device_code";
-const baseURL = (process.env.BASE_URL || process.env.GN_ME_URL?.replace(/\/me\/?$/, "") || "").replace(/\/$/, "");
+const requestedMode = process.argv[2] || process.env.CATALOGUE_AUTH_MODE || "device_code";
+const baseURL = (process.env.BASE_URL || "").replace(/\/$/, "");
 
 if (!baseURL) {
-  throw new Error("BASE_URL or GN_ME_URL is required.");
+  throw new Error("BASE_URL is required.");
 }
 
 const auth = new AuthManager({
-  username: process.env.CATALOGUE_USERNAME || process.env.GN_USERNAME || "",
-  password: process.env.CATALOGUE_PASSWORD || process.env.GN_PASSWORD || "",
+  username: process.env.CATALOGUE_USERNAME || "",
+  password: process.env.CATALOGUE_PASSWORD || "",
   mode: requestedMode,
-  oidcIssuerUrl: process.env.OIDC_ISSUER_URL || process.env.GN_KEYCLOAK_ISSUER || "",
-  oidcClientId: process.env.OIDC_CLIENT_ID || process.env.GN_CLIENT_ID || "",
-  oidcClientSecret: process.env.OIDC_CLIENT_SECRET || process.env.GN_CLIENT_SECRET || "",
+  oidcIssuerUrl: process.env.OIDC_ISSUER_URL || "",
+  oidcClientId: process.env.OIDC_CLIENT_ID || "",
+  oidcClientSecret: process.env.OIDC_CLIENT_SECRET || "",
   oidcScope: process.env.OIDC_SCOPE || "openid profile email",
   deviceCodeTimeoutSeconds: Number(process.env.DEVICE_CODE_TIMEOUT_SECONDS || "300"),
-  accessToken: process.env.OIDC_ACCESS_TOKEN || process.env.GN_ACCESS_TOKEN || "",
-  refreshToken: process.env.OIDC_REFRESH_TOKEN || process.env.GN_REFRESH_TOKEN || "",
+  accessToken: process.env.OIDC_ACCESS_TOKEN || "",
+  refreshToken: process.env.OIDC_REFRESH_TOKEN || "",
 });
 
 const axiosInstance = axios.create({

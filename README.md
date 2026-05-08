@@ -1,10 +1,10 @@
-# EEA GeoNetwork MCP Server
+# GeoNetwork MCP Server
 
-A Model Context Protocol (MCP) server that provides tools to interact with the European Environment Agency (EEA) GeoNetwork Catalogue API (GeoNetwork 4.4.9).
+A Model Context Protocol (MCP) server that provides tools to interact with a GeoNetwork Catalogue API (tested with GeoNetwork 4.4.9).
 
 ## Features
 
-This MCP server provides 20 tools for interacting with the EEA GeoNetwork Catalogue:
+This MCP server provides 21 tools for interacting with GeoNetwork:
 
 ### Search & Discovery
 - **search_records** - Search for metadata records with full Elasticsearch query support
@@ -23,6 +23,7 @@ This MCP server provides 20 tools for interacting with the EEA GeoNetwork Catalo
 - **update_record_title** - Simplified tool to update a record's title (auto-detects schema)
 - **add_record_tags** - Add tags/categories to a record
 - **delete_record_tags** - Remove tags/categories from a record
+- **delete_record** - Guarded full-record delete requiring exact title confirmation and `confirm="DELETE"`
 
 ### Resource/Attachment Management
 - **upload_file_to_record** - Upload a file from local filesystem directly to a metadata record (requires authentication)
@@ -61,7 +62,7 @@ You can customize the configuration by creating a `.env` file or editing the `do
 ```yaml
 environment:
   - PORT=3001
-  - BASE_URL=https://galliwasp.eea.europa.eu/catalogue/srv/api
+  - BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
   - CATALOGUE_USERNAME=your_username
   - CATALOGUE_PASSWORD=your_password
 ```
@@ -82,12 +83,19 @@ npm run build
 ```bash
 # Create a .env file in the project root
 PORT=3001
-BASE_URL=https://galliwasp.eea.europa.eu/catalogue/srv/api
+BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
 MAX_SEARCH_RESULTS=20
 
-# Authentication for write operations (duplicate, update)
-CATALOGUE_USERNAME=your_username
-CATALOGUE_PASSWORD='your_password'
+# Recommended: OIDC Device Code authentication for real-user bearer auth
+CATALOGUE_AUTH_MODE=device_code
+OIDC_ISSUER_URL=https://your-keycloak.example/realms/your-realm
+OIDC_CLIENT_ID=geonetwork
+OIDC_CLIENT_SECRET=your_client_secret
+
+# Legacy Basic/session authentication, only for deployments that allow it
+# CATALOGUE_AUTH_MODE=basic
+# CATALOGUE_USERNAME=your_username
+# CATALOGUE_PASSWORD='your_password'
 
 # Rate limiting
 RATE_LIMIT_WINDOW_MS=900000
@@ -95,6 +103,51 @@ RATE_LIMIT_MAX_REQUESTS=100
 ```
 
 **Note:** For passwords containing special characters (`$`, `#`, etc.), wrap the value in single quotes.
+
+## Authentication
+
+Protected tools support Keycloak/OIDC Device Code bearer auth first, with legacy Basic/session credentials as a secondary option for deployments that still allow it.
+
+### OIDC Device Code Mode
+
+Device Code mode uses real-user bearer tokens and is the recommended path for Keycloak/OIDC GeoNetwork deployments:
+
+```bash
+BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
+CATALOGUE_AUTH_MODE=device_code
+OIDC_ISSUER_URL=https://your-keycloak.example/realms/your-realm
+OIDC_CLIENT_ID=geonetwork
+OIDC_CLIENT_SECRET=your_client_secret
+```
+
+Behavior:
+
+- The first authenticated tool call prompts with a browser login URL and user code.
+- Tokens are cached in memory for the MCP server process.
+- Refresh tokens are used silently if the identity provider returns them.
+- Restarting the MCP server loses in-memory tokens and prompts again on the next authenticated call.
+- Mutating requests include GeoNetwork CSRF handling: `XSRF-TOKEN` cookie plus `X-XSRF-TOKEN` header.
+
+### Legacy Basic Credentials Mode
+
+Username/password Basic or session auth may not work when GeoNetwork is configured as OIDC-only. Use this mode only for deployments that explicitly allow username/password API authentication.
+
+```bash
+BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
+CATALOGUE_AUTH_MODE=basic
+CATALOGUE_USERNAME=your_username
+CATALOGUE_PASSWORD='your_password'
+```
+
+### No Auth Mode
+
+```bash
+CATALOGUE_AUTH_MODE=none
+```
+
+Use only for public/read-only catalogue access.
+
+Do not commit real service URLs, passwords, client secrets, bearer tokens, or refresh tokens.
 
 ## Usage
 
@@ -139,14 +192,13 @@ The server includes a built-in upload basket for temporary file storage. This al
 2. Expand the "POST /upload" endpoint
 3. Click "Try it out"
 4. Select a file and click "Execute"
-5. Copy the returned URL from the response
-6. Use this URL with the `upload_resource_from_url` MCP tool
+5. Copy the returned URL from the response if another workflow needs it
 
 **How it works:**
 1. Upload a file via `POST /upload` endpoint (or use Swagger UI)
 2. Server stores the file in the `uploads/` directory
 3. Server returns a URL: `http://localhost:3001/uploads/filename`
-4. Use this URL with `upload_resource_from_url` tool to attach to metadata records
+4. Use direct local paths with `upload_file_to_record` when attaching files through MCP
 
 **Configuration:**
 ```bash
@@ -171,7 +223,7 @@ Add to your Claude Desktop configuration file:
   "mcpServers": {
     "eea-geonetwork": {
       "command": "node",
-      "args": ["C:\\Users\\dubos\\_Projects\\EEA_sdi_mcp\\dist\\index.js"]
+      "args": ["C:\\path\\to\\geonetwork-mcp\\dist\\index.js"]
     }
   }
 }
@@ -181,7 +233,7 @@ Add to your Claude Desktop configuration file:
 
 Once connected to Claude Desktop, you can ask questions like:
 
-- "Search the EEA catalogue for datasets about air quality"
+- "Search the catalogue for datasets about air quality"
 - "Find all metadata records within the bounding box of Europe"
 - "Get detailed information about record UUID abc-123-def"
 - "Export this metadata record as XML"
@@ -190,7 +242,13 @@ Once connected to Claude Desktop, you can ask questions like:
 
 ## API Base URL
 
-The server connects to: `https://galliwasp.eea.europa.eu/catalogue/srv/api` (Sandbox Environment)
+Set the target GeoNetwork API with `BASE_URL`:
+
+```bash
+BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
+```
+
+`BASE_URL` is required for the server and verification scripts.
 
 ## Development
 
@@ -199,6 +257,17 @@ The server connects to: `https://galliwasp.eea.europa.eu/catalogue/srv/api` (San
 - **Build**: `npm run build` - Compile TypeScript to dist/
 - **Watch mode**: `npm run dev` - Compile TypeScript in watch mode (auto-recompile on changes)
 - **Start**: `npm start` - Run the compiled server
+- **Verify Device Code read auth**: `npm run verify:device-code`
+- **Verify all tools with Device Code**: `npm run verify:tools -- device_code`
+- **Verify all tools with credentials**: `npm run verify:tools -- basic`
+
+Tool verification uses a safe duplicate-based workflow. Configure a source record UUID and, if it cannot be derived, a target group:
+
+```bash
+VERIFY_SOURCE_UUID=source-record-uuid
+VERIFY_TARGET_GROUP=target-group-id
+npm run verify:tools -- device_code
+```
 
 ### Development Workflow
 
@@ -221,12 +290,15 @@ This way, TypeScript will automatically recompile when you make changes, and you
 The server uses the official MCP SDK with Streamable HTTP transport (stateless mode):
 - **Express server** handles HTTP endpoints with CORS support
 - **MCP Server** handles tool requests via Streamable HTTP/SSE
-- **Axios client** communicates with the EEA GeoNetwork API (30s timeout)
+- **Axios client** communicates with the GeoNetwork API (30s timeout)
+- **Auth manager** supports credentials and Device Code bearer auth with CSRF handling
 - **Modular design** with separate files:
   - `src/index.ts` - Server setup and routing
-  - `src/tools.ts` - Tool definitions (20 tools)
+  - `src/auth.ts` - Authentication and CSRF helper
+  - `src/tools.ts` - Tool definitions (21 tools)
   - `src/handlers.ts` - Tool implementation handlers
   - `src/types.ts` - TypeScript interfaces
+  - `src/verify-mcp-tools.ts` - Safe duplicate-based tool verifier
 
 ## Tools Reference
 
@@ -264,6 +336,7 @@ Export a metadata record in a specific format.
 **Parameters:**
 - `uuid` (string, required): Record UUID
 - `formatter` (string, required): Format identifier (e.g., "xml", "pdf", "full_view")
+- `approved` (boolean, optional): Use approved version or not (default: true)
 
 Use `get_record_formatters` first to see available formats for a record.
 
@@ -272,7 +345,7 @@ Duplicate an existing metadata record with a new UUID. **Requires authentication
 
 **Parameters:**
 - `metadataUuid` (string, required): UUID of the record to duplicate
-- `group` (string, optional): Target group for the duplicated record
+- `group` (string, required): Target group for the duplicated record
 - `isChildOfSource` (boolean, optional): Set the source record as parent of the new record (default: false)
 - `targetUuid` (string, optional): Specific UUID to use for the duplicated record (auto-generated if not provided)
 - `hasCategoryOfSource` (boolean, optional): Copy categories from source record (default: true)
@@ -320,13 +393,29 @@ Remove tags (categories) from a metadata record. **Requires authentication.**
 - `uuid` (string, required): UUID of the record
 - `tags` (array of numbers, required): Array of tag IDs to remove
 
+### delete_record
+Delete a metadata record. **Requires authentication.** This is intentionally guarded because it removes the record itself.
+
+**Parameters:**
+- `metadataUuid` (string, required): UUID of the record to delete
+- `confirmTitle` (string, required): Exact current title of the record
+- `confirm` (string, required): Must be exactly `DELETE`
+- `withBackup` (boolean, optional): Ask GeoNetwork to create a backup before delete (default: true)
+
+**Safety behavior:**
+- Searches by UUID first
+- Refuses to delete unless exactly one matching record is found
+- Refuses to delete unless the current title exactly matches `confirmTitle`
+- Sends GeoNetwork CSRF cookie/header for the mutating request
+- Verifies post-delete search result
+
 ### upload_file_to_record
 Upload a file from your local filesystem directly to a metadata record as an attachment. The file is uploaded as binary data to GeoNetwork. **Requires authentication.**
 
 **Parameters:**
 - `metadataUuid` (string, required): UUID of the metadata record to attach the file to
 - `filePath` (string, required): Absolute path to the local file (e.g., `C:\Users\name\document.pdf` or `/home/user/document.pdf`)
-- `visibility` (string, optional): The sharing policy - "PUBLIC" or "PRIVATE" (default: PUBLIC)
+- `visibility` (string, optional): The sharing policy - `public` or `private` (default: public)
 - `approved` (boolean, optional): Use approved version or not (default: false)
 
 **Example:**
@@ -364,7 +453,5 @@ MIT
 
 ## Related Links
 
-- [EEA SDI Sandbox Catalogue](https://galliwasp.eea.europa.eu/catalogue/)
-- [API Documentation](https://galliwasp.eea.europa.eu/catalogue/doc/api/index.html)
 - [GeoNetwork Documentation](https://geonetwork-opensource.org/)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
