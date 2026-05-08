@@ -102,6 +102,7 @@ You can customize the configuration by creating a `.env` file or editing `docker
 environment:
   - PORT=3001
   - BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
+  - MAX_SEARCH_RESULTS=100
   - CATALOGUE_AUTH_MODE=device_code
   - OIDC_ISSUER_URL=https://your-keycloak.example/realms/your-realm
   - OIDC_CLIENT_ID=geonetwork
@@ -118,6 +119,7 @@ Device Code mode uses real-user bearer tokens and is the recommended path for Ke
 
 ```bash
 BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
+MAX_SEARCH_RESULTS=100
 CATALOGUE_AUTH_MODE=device_code
 OIDC_ISSUER_URL=https://your-keycloak.example/realms/your-realm
 OIDC_CLIENT_ID=geonetwork
@@ -281,7 +283,7 @@ Set the target GeoNetwork API with `BASE_URL`:
 BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
 ```
 
-`BASE_URL` is required for the server and verification scripts.
+`BASE_URL` is required for the server and verification scripts. `MAX_SEARCH_RESULTS` caps `search_records` responses to avoid very large MCP payloads; `100` is a practical default for interactive use.
 
 ## Development
 
