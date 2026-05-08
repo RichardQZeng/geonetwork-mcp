@@ -51,7 +51,7 @@ npm install
 npm run build
 ```
 
-3. (Optional) Configure environment variables:
+3. Configure environment variables:
 ```bash
 # Create a .env file in the project root
 PORT=3001
@@ -96,14 +96,16 @@ docker-compose down
 The server will be available at `http://localhost:3001`
 
 **Environment Variables:**
-You can customize the configuration by creating a `.env` file or editing the `docker-compose.yml`:
+You can customize the configuration by creating a `.env` file or editing `docker-compose.yml`:
 
 ```yaml
 environment:
   - PORT=3001
   - BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
-  - CATALOGUE_USERNAME=your_username
-  - CATALOGUE_PASSWORD=your_password
+  - CATALOGUE_AUTH_MODE=device_code
+  - OIDC_ISSUER_URL=https://your-keycloak.example/realms/your-realm
+  - OIDC_CLIENT_ID=geonetwork
+  - OIDC_CLIENT_SECRET=your_client_secret
 ```
 
 ## Authentication
@@ -221,27 +223,48 @@ MAX_FILE_SIZE=104857600        # Max file size in bytes (default: 100MB)
 - Access the interactive API documentation and file upload interface at:
 - `http://localhost:3001/api-docs`
 
-### With Claude Desktop
+### With OpenCode
 
-Add to your Claude Desktop configuration file:
+This server currently exposes MCP over Streamable HTTP, so configure OpenCode as a remote MCP server and start this process separately.
 
-**MacOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+Add this entry under the `mcp` object in your OpenCode config, for example `C:\Users\<you>\.config\opencode\opencode.jsonc` on Windows:
 
-```json
+```jsonc
 {
-  "mcpServers": {
+  "mcp": {
     "geonetwork-mcp": {
-      "command": "node",
-      "args": ["C:\\path\\to\\geonetwork-mcp\\dist\\index.js"]
+      "type": "remote",
+      "url": "http://localhost:3001/",
+      "enabled": true,
+      "timeout": 60000
     }
   }
 }
 ```
 
+Start the server separately:
+
+```powershell
+cd D:\Geospatial\geonetwork-mcp
+npm run build
+npm start
+```
+
+The server reads `BASE_URL`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and other settings from its own process environment. You do not need to put OIDC secrets in the OpenCode config if they are already available as Windows user/system environment variables.
+
+### With Other MCP Clients
+
+Use an MCP client that supports Streamable HTTP and point it at:
+
+```text
+http://localhost:3001/
+```
+
+The current `dist/index.js` entrypoint is not a stdio MCP server. Local stdio configs such as `command: node` plus `args: ["dist/index.js"]` are not supported unless a separate stdio entrypoint is added.
+
 ## Example Queries
 
-Once connected to Claude Desktop, you can ask questions like:
+Once connected from an MCP client, you can ask questions like:
 
 - "Search the catalogue for datasets about air quality"
 - "Find all metadata records within the bounding box of Europe"
