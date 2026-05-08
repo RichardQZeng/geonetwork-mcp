@@ -11,12 +11,12 @@ const buildSwaggerSpec = (baseUrl: string) => {
   return {
     openapi: "3.0.0",
     info: {
-      title: "EEA GeoNetwork MCP Server - Upload Basket API",
+      title: "GeoNetwork MCP Server - Upload Basket API",
       version: "2.0.0",
       description:
-        "Upload files to the basket for use with the EEA GeoNetwork Catalogue. Upload files here, then use the returned URL with the upload_resource_from_url MCP tool to attach them to metadata records.",
+        "Upload files to the basket for use with the GeoNetwork Catalogue. Upload files here, then use the returned URL with the upload_file_to_record MCP tool to attach them to metadata records.",
       contact: {
-        name: "EEA GeoNetwork Team",
+        name: "GeoNetwork MCP Maintainers",
       },
     },
     servers: [
@@ -163,7 +163,7 @@ const buildSwaggerSpec = (baseUrl: string) => {
                     type: "object",
                     properties: {
                       status: { type: "string", example: "ok" },
-                      service: { type: "string", example: "eea-geonetwork-mcp" },
+                      service: { type: "string", example: "geonetwork-mcp" },
                     },
                   },
                 },
@@ -193,7 +193,7 @@ export const registerSwaggerDocs = (app: Application, spec: object) => {
     "/api-docs",
     swaggerUi.serve,
     swaggerUi.setup(spec, {
-      customSiteTitle: "EEA GeoNetwork Upload Basket API",
+      customSiteTitle: "GeoNetwork Upload Basket API",
       customCss: ".swagger-ui .topbar { display: none }",
     })
   );

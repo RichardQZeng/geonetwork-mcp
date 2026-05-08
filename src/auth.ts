@@ -1,6 +1,8 @@
 import axios from "axios";
 
-type AuthMode = "none" | "basic" | "device_code";
+export type AuthMode = "none" | "basic" | "device_code";
+
+export type AuthModeConfig = AuthMode | "" | "credentials" | "device" | "oidc";
 
 type DiscoveryDocument = {
   device_authorization_endpoint?: string;
@@ -25,7 +27,7 @@ type TokenResponse = {
 export type AuthConfig = {
   username: string;
   password: string;
-  mode: string;
+  mode: AuthModeConfig;
   oidcIssuerUrl: string;
   oidcClientId: string;
   oidcClientSecret: string;
@@ -98,6 +100,10 @@ export class AuthManager {
       validateStatus: () => true,
     });
 
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`GeoNetwork CSRF bootstrap failed with HTTP ${response.status} from /site.`);
+    }
+
     const setCookies = response.headers["set-cookie"] || [];
     const cookieHeader = this.toCookieHeader(setCookies);
     const xsrfToken = this.extractCookie(setCookies, "XSRF-TOKEN");
@@ -139,9 +145,8 @@ export class AuthManager {
     }
 
     const deviceAuth = await this.startDeviceAuthorization(discovery);
-    const loginUrl = deviceAuth.verification_uri_complete || deviceAuth.verification_uri;
     console.log("[Auth] Complete Device Code login in a browser:");
-    console.log(`[Auth] ${loginUrl}`);
+    console.log(`[Auth] ${deviceAuth.verification_uri}`);
     console.log(`[Auth] User code: ${deviceAuth.user_code}`);
 
     const token = await this.pollForDeviceToken(discovery, deviceAuth.device_code, deviceAuth.interval || 5);

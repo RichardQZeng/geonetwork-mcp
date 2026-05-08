@@ -868,7 +868,10 @@ export class ToolHandlers {
       if (deleteResponse.status === 204) {
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (attempt < 3) {
+        console.warn(`[DeleteRecord] Attempt ${attempt} failed with HTTP ${deleteResponse.status}; retrying in 2s.`);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
     }
 
     const verifyResponse = await this.axiosInstance.post("/search/records/_search", {

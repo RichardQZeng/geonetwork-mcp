@@ -39,7 +39,46 @@ This MCP server provides 21 tools for interacting with GeoNetwork:
 
 ## Installation
 
-### Option 1: Docker (Recommended)
+### Option 1: Manual Installation
+
+1. Install dependencies:
+```bash
+npm install
+```
+
+2. Build the project:
+```bash
+npm run build
+```
+
+3. (Optional) Configure environment variables:
+```bash
+# Create a .env file in the project root
+PORT=3001
+BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
+MAX_SEARCH_RESULTS=20
+
+# Recommended: OIDC Device Code authentication for real-user bearer auth
+CATALOGUE_AUTH_MODE=device_code
+OIDC_ISSUER_URL=https://your-keycloak.example/realms/your-realm
+OIDC_CLIENT_ID=geonetwork
+OIDC_CLIENT_SECRET=your_client_secret
+# Add offline_access if your identity provider requires it for refresh tokens
+# OIDC_SCOPE="openid profile email offline_access"
+
+# Legacy Basic/session authentication, only for deployments that allow it
+# CATALOGUE_AUTH_MODE=basic
+# CATALOGUE_USERNAME=your_username
+# CATALOGUE_PASSWORD='your_password'
+
+# Rate limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+```
+
+**Note:** For passwords containing special characters (`$`, `#`, etc.), wrap the value in single quotes.
+
+### Option 2: Docker
 
 The easiest way to run the server is using Docker:
 
@@ -67,43 +106,6 @@ environment:
   - CATALOGUE_PASSWORD=your_password
 ```
 
-### Option 2: Manual Installation
-
-1. Install dependencies:
-```bash
-npm install
-```
-
-2. Build the project:
-```bash
-npm run build
-```
-
-3. (Optional) Configure environment variables:
-```bash
-# Create a .env file in the project root
-PORT=3001
-BASE_URL=https://your-geonetwork.example/geonetwork/srv/api
-MAX_SEARCH_RESULTS=20
-
-# Recommended: OIDC Device Code authentication for real-user bearer auth
-CATALOGUE_AUTH_MODE=device_code
-OIDC_ISSUER_URL=https://your-keycloak.example/realms/your-realm
-OIDC_CLIENT_ID=geonetwork
-OIDC_CLIENT_SECRET=your_client_secret
-
-# Legacy Basic/session authentication, only for deployments that allow it
-# CATALOGUE_AUTH_MODE=basic
-# CATALOGUE_USERNAME=your_username
-# CATALOGUE_PASSWORD='your_password'
-
-# Rate limiting
-RATE_LIMIT_WINDOW_MS=900000
-RATE_LIMIT_MAX_REQUESTS=100
-```
-
-**Note:** For passwords containing special characters (`$`, `#`, etc.), wrap the value in single quotes.
-
 ## Authentication
 
 Protected tools support Keycloak/OIDC Device Code bearer auth first, with legacy Basic/session credentials as a secondary option for deployments that still allow it.
@@ -118,6 +120,12 @@ CATALOGUE_AUTH_MODE=device_code
 OIDC_ISSUER_URL=https://your-keycloak.example/realms/your-realm
 OIDC_CLIENT_ID=geonetwork
 OIDC_CLIENT_SECRET=your_client_secret
+# Optional: request refresh tokens if your IdP requires this scope
+# OIDC_SCOPE="openid profile email offline_access"
+
+# Optional: seed tokens from a secure runtime environment
+# OIDC_ACCESS_TOKEN=...
+# OIDC_REFRESH_TOKEN=...
 ```
 
 Behavior:
@@ -125,6 +133,8 @@ Behavior:
 - The first authenticated tool call prompts with a browser login URL and user code.
 - Tokens are cached in memory for the MCP server process.
 - Refresh tokens are used silently if the identity provider returns them.
+- Env-supplied `OIDC_ACCESS_TOKEN` / `OIDC_REFRESH_TOKEN` values are used only for this process and still expire according to the identity provider's token lifetime.
+- Some identity providers require `offline_access` in `OIDC_SCOPE` before they issue refresh tokens.
 - Restarting the MCP server loses in-memory tokens and prompts again on the next authenticated call.
 - Mutating requests include GeoNetwork CSRF handling: `XSRF-TOKEN` cookie plus `X-XSRF-TOKEN` header.
 
@@ -175,7 +185,7 @@ The server will start on port 3001 (or the port specified in the `PORT` environm
 # Check if server is running
 curl http://localhost:3001/health
 
-# Should return: {"status":"ok","service":"eea-geonetwork-mcp"}
+# Should return: {"status":"ok","service":"geonetwork-mcp"}
 
 # Upload a file to the basket
 curl -X POST http://localhost:3001/upload -F "file=@myfile.pdf"
@@ -221,7 +231,7 @@ Add to your Claude Desktop configuration file:
 ```json
 {
   "mcpServers": {
-    "eea-geonetwork": {
+    "geonetwork-mcp": {
       "command": "node",
       "args": ["C:\\path\\to\\geonetwork-mcp\\dist\\index.js"]
     }
@@ -268,6 +278,8 @@ VERIFY_SOURCE_UUID=source-record-uuid
 VERIFY_TARGET_GROUP=target-group-id
 npm run verify:tools -- device_code
 ```
+
+If `VERIFY_SOURCE_UUID` is not set, the verifier falls back to a developer-catalog UUID used for this repository's test GeoNetwork. Set `VERIFY_SOURCE_UUID` explicitly before running against another catalogue.
 
 ### Development Workflow
 

@@ -17,7 +17,15 @@ import fs from "fs";
 import { tools } from "./tools.js";
 import { ToolHandlers } from "./handlers.js";
 import { createSwaggerSpec, registerSwaggerDocs } from "./swagger.js";
-import { AuthManager } from "./auth.js";
+import { AuthManager, type AuthModeConfig } from "./auth.js";
+
+const normalizeAuthMode = (mode: string): AuthModeConfig => {
+  const normalized = mode.toLowerCase();
+  if (["none", "basic", "device_code", "credentials", "device", "oidc"].includes(normalized)) {
+    return normalized as AuthModeConfig;
+  }
+  return "";
+};
 
 const CONFIG = {
   BASE_URL: process.env.BASE_URL,
@@ -133,7 +141,7 @@ class GeoNetworkMcpServer {
     const authManager = new AuthManager({
       username: CONFIG.CATALOGUE_USERNAME,
       password: CONFIG.CATALOGUE_PASSWORD,
-      mode: CONFIG.CATALOGUE_AUTH_MODE,
+      mode: normalizeAuthMode(CONFIG.CATALOGUE_AUTH_MODE),
       oidcIssuerUrl: CONFIG.OIDC_ISSUER_URL,
       oidcClientId: CONFIG.OIDC_CLIENT_ID,
       oidcClientSecret: CONFIG.OIDC_CLIENT_SECRET,
@@ -194,15 +202,15 @@ class GeoNetworkMcpServer {
 
     // Health check endpoint
     this.app.get("/health", (_req, res) => {
-      res.json({ status: "ok", service: "eea-geonetwork-mcp" });
+      res.json({ status: "ok", service: "geonetwork-mcp" });
     });
 
     // Browser-friendly info page
     this.app.get("/info", (_req, res) => {
       res.json({
-        name: "EEA GeoNetwork MCP Server",
+        name: "GeoNetwork MCP Server",
         version: "2.0.0",
-        description: "MCP server for EEA GeoNetwork Catalogue API (GeoNetwork 4.4.9)",
+        description: "MCP server for GeoNetwork Catalogue API (GeoNetwork 4.4.9)",
         transport: "Streamable HTTP",
         endpoints: {
           mcp: "POST /",
@@ -225,7 +233,7 @@ class GeoNetworkMcpServer {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EEA GeoNetwork MCP Playground</title>
+  <title>GeoNetwork MCP Playground</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh;display:flex;flex-direction:column}
@@ -265,7 +273,7 @@ class GeoNetworkMcpServer {
 </head>
 <body>
   <header>
-    <h1>EEA GeoNetwork MCP Playground</h1>
+    <h1>GeoNetwork MCP Playground</h1>
     <span>MCP Tools</span>
   </header>
   <div class="layout">
@@ -469,7 +477,7 @@ class GeoNetworkMcpServer {
     // allows one active transport connection per Server instance (stateless mode).
     const handleMCPRequest = async (req: Request, res: Response, body: any = null) => {
       const mcpServer = new Server(
-        { name: "eea-geonetwork", version: "2.0.0" },
+        { name: "geonetwork-mcp", version: "2.0.0" },
         { capabilities: { tools: {} } }
       );
       mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
@@ -568,7 +576,7 @@ class GeoNetworkMcpServer {
   async run(): Promise<void> {
     this.app.listen(PORT_NUMBER, () => {
       const publicBaseUrl = getPublicBaseUrl();
-      console.log(`EEA GeoNetwork MCP Server running on ${publicBaseUrl}`);
+      console.log(`GeoNetwork MCP Server running on ${publicBaseUrl}`);
       console.log(`\nEndpoints:`);
       console.log(`  GET  ${buildAbsoluteUrl(undefined, "/health")}          - Health check`);
       console.log(`  GET  ${buildAbsoluteUrl(undefined, "/info")}            - Server information`);

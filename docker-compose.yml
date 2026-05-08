@@ -1,7 +1,7 @@
 services:
-  eea-geonetwork-mcp:
+  geonetwork-mcp:
     image: eeacms/eea-geonetwork-mcp:latest
-    container_name: eea-geonetwork-mcp
+    container_name: geonetwork-mcp
     ports:
       - "3001:3001"
     environment:

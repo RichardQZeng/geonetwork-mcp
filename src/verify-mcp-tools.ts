@@ -5,7 +5,7 @@ import axios from "axios";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { AuthManager } from "./auth.js";
+import { AuthManager, type AuthModeConfig } from "./auth.js";
 import { ToolHandlers } from "./handlers.js";
 
 type VerificationResult = {
@@ -14,8 +14,16 @@ type VerificationResult = {
   detail?: string;
 };
 
+const normalizeAuthMode = (mode: string): AuthModeConfig => {
+  const normalized = mode.toLowerCase();
+  if (["none", "basic", "device_code", "credentials", "device", "oidc"].includes(normalized)) {
+    return normalized as AuthModeConfig;
+  }
+  return "device_code";
+};
+
 const sourceUuid = process.env.VERIFY_SOURCE_UUID || process.argv[3] || "36a42c4c-aa46-43af-847f-7c5ed9682ceb";
-const requestedMode = process.argv[2] || process.env.CATALOGUE_AUTH_MODE || "device_code";
+const requestedMode = normalizeAuthMode(process.argv[2] || process.env.CATALOGUE_AUTH_MODE || "device_code");
 const baseURL = (process.env.BASE_URL || "").replace(/\/$/, "");
 
 if (!baseURL) {
