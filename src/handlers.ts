@@ -27,6 +27,12 @@ import {
 } from "./types.js";
 import { AuthManager } from "./auth.js";
 
+export class ToolAuthRequiredError extends Error {
+  constructor(public response: ToolResponse) {
+    super("Authentication required");
+  }
+}
+
 export class ToolHandlers {
   private config: HandlerConfig;
 
@@ -59,11 +65,31 @@ export class ToolHandlers {
       content: [
         {
           type: "text",
-          text: this.auth.authRequiredMessage(action),
+          text: this.auth.hasAuth()
+            ? JSON.stringify(this.auth.authRequired(action), null, 2)
+            : this.auth.authRequiredMessage(action),
         },
       ],
       isError: true,
     };
+  }
+
+  async authStatus(): Promise<ToolResponse> {
+    return this.formatResponse(this.auth.getStatus());
+  }
+
+  async authLogin(): Promise<ToolResponse> {
+    return this.formatResponse(await this.auth.startDeviceLogin());
+  }
+
+  async authPoll(): Promise<ToolResponse> {
+    const result = await this.auth.pollDeviceLogin();
+    return this.formatResponse(result);
+  }
+
+  async authLogout(): Promise<ToolResponse> {
+    this.auth.logout();
+    return this.formatResponse({ success: true, message: "Local authentication state cleared." });
   }
 
   async searchRecords(args: SearchRecordsArgs): Promise<ToolResponse> {
@@ -339,7 +365,7 @@ export class ToolHandlers {
       ...(!hasCategoryOfSource && { hasCategoryOfSource: false }),
     };
 
-    const authenticatedHeaders = await this.getAuthenticatedHeaders();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders("duplicate_record");
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     try {
@@ -417,9 +443,16 @@ export class ToolHandlers {
     }
   }
 
-  private async getAuthenticatedHeaders(): Promise<Record<string, string>> {
+  private async getAuthenticatedHeaders(action = "authenticated request"): Promise<Record<string, string>> {
     if (!this.hasCredentials()) {
       throw new Error("Authentication credentials are not configured.");
+    }
+    const authCheck = await this.auth.ensureAuthenticated(action);
+    if (!authCheck.authenticated) {
+      throw new ToolAuthRequiredError({
+        content: [{ type: "text", text: JSON.stringify(authCheck.required, null, 2) }],
+        isError: true,
+      });
     }
     const baseURL = this.axiosInstance.defaults.baseURL || "";
     return this.auth.getCsrfHeaders(baseURL);
@@ -440,7 +473,7 @@ export class ToolHandlers {
 
     console.log(`[UpdateRecord] UUID: ${uuid}, XPath: ${xpath}, Operation: ${operation}`);
 
-    const authenticatedHeaders = await this.getAuthenticatedHeaders();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders("update_record");
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     // Build the batch editing request body
@@ -600,7 +633,7 @@ export class ToolHandlers {
 
     console.log(`[UpdateRecordTitle] UUID: ${uuid}, New Title: ${title}`);
 
-    const authenticatedHeaders = await this.getAuthenticatedHeaders();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders("update_record_title");
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     // First, detect the schema by fetching the record's XML
@@ -686,7 +719,7 @@ export class ToolHandlers {
 
     console.log(`[AddRecordTags] UUID: ${uuid}, Tags: ${tags.join(", ")}`);
 
-    const authenticatedHeaders = await this.getAuthenticatedHeaders();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders("add_record_tags");
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     try {
@@ -725,7 +758,7 @@ export class ToolHandlers {
 
     console.log(`[DeleteRecordTags] UUID: ${uuid}, Tags: ${tags.join(", ")}`);
 
-    const authenticatedHeaders = await this.getAuthenticatedHeaders();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders("delete_record_tags");
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     try {
@@ -786,7 +819,7 @@ export class ToolHandlers {
 
     console.log(`[DeleteAttachment] UUID: ${metadataUuid}, Resource ID: ${resourceId}`);
 
-    const authenticatedHeaders = await this.getAuthenticatedHeaders();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders("delete_attachment");
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     try {
@@ -850,7 +883,7 @@ export class ToolHandlers {
       };
     }
 
-    const authenticatedHeaders = await this.getAuthenticatedHeaders();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders("delete_record");
     const baseURL = this.axiosInstance.defaults.baseURL || "";
     let deleteStatus = 0;
     let deleteDetails: any;
@@ -923,7 +956,7 @@ export class ToolHandlers {
     const stats = fs.statSync(filePath);
     const filename = path.basename(filePath);
 
-    const authenticatedHeaders = await this.getAuthenticatedHeaders();
+    const authenticatedHeaders = await this.getAuthenticatedHeaders("upload_file_to_record");
     const baseURL = this.axiosInstance.defaults.baseURL || "";
 
     try {

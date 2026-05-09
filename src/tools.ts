@@ -2,6 +2,38 @@ import { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 export const tools: Tool[] = [
   {
+    name: "auth_status",
+    description: "Show authentication mode and current login state. This is read-only and does not start a browser login flow.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "auth_login",
+    description: "Start or reuse an OIDC Device Code login flow. Open the returned browser URL, enter the user code if needed, then call auth_poll.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "auth_poll",
+    description: "Poll the pending OIDC Device Code login once. Call this after completing browser login; if pending, wait for retryAfterSeconds before polling again.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "auth_logout",
+    description: "Clear local in-memory authentication tokens and any pending Device Code login state. This does not revoke the identity provider session.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
     name: "search_records",
     description: "Search for metadata records in the EEA catalogue. Supports full Elasticsearch query syntax.",
     inputSchema: {
@@ -210,7 +242,7 @@ export const tools: Tool[] = [
   },
   {
     name: "duplicate_record",
-    description: "Duplicate a metadata record. Creates a copy of an existing record with a new UUID.",
+    description: "Duplicate a metadata record. Creates a copy of an existing record with a new UUID. Requires authentication; if not logged in, call auth_login, complete browser login, then call auth_poll before retrying.",
     inputSchema: {
       type: "object",
       properties: {
@@ -242,7 +274,7 @@ export const tools: Tool[] = [
   },
   {
     name: "update_record",
-    description: "Update a metadata record field using XPath. Supports replacing, adding, or deleting XML elements. Requires authentication.",
+    description: "Update a metadata record field using XPath. Supports replacing, adding, or deleting XML elements. Requires authentication; if not logged in, call auth_login, complete browser login, then call auth_poll before retrying.",
     inputSchema: {
       type: "object",
       properties: {
@@ -289,7 +321,7 @@ export const tools: Tool[] = [
   },
   {
     name: "update_record_title",
-    description: "Update the title of a metadata record. Automatically detects the schema (ISO 19139 or ISO 19115-3) and uses the correct XPath.",
+    description: "Update the title of a metadata record. Automatically detects the schema (ISO 19139 or ISO 19115-3) and uses the correct XPath. Requires authentication; if not logged in, call auth_login, complete browser login, then call auth_poll before retrying.",
     inputSchema: {
       type: "object",
       properties: {
@@ -307,7 +339,7 @@ export const tools: Tool[] = [
   },
   {
     name: "add_record_tags",
-    description: "Add tags (categories) to a metadata record. Use get_tags first to find available tag IDs. Requires authentication.",
+    description: "Add tags (categories) to a metadata record. Use get_tags first to find available tag IDs. Requires authentication; if not logged in, call auth_login, complete browser login, then call auth_poll before retrying.",
     inputSchema: {
       type: "object",
       properties: {
@@ -326,7 +358,7 @@ export const tools: Tool[] = [
   },
   {
     name: "delete_record_tags",
-    description: "Remove tags (categories) from a metadata record. Requires authentication.",
+    description: "Remove tags (categories) from a metadata record. Requires authentication; if not logged in, call auth_login, complete browser login, then call auth_poll before retrying.",
     inputSchema: {
       type: "object",
       properties: {
@@ -375,7 +407,7 @@ export const tools: Tool[] = [
   },
   {
     name: "delete_attachment",
-    description: "Delete a specific attachment from a metadata record. Requires authentication.",
+    description: "Delete a specific attachment from a metadata record. Requires authentication; if not logged in, call auth_login, complete browser login, then call auth_poll before retrying.",
     inputSchema: {
       type: "object",
       properties: {
@@ -398,7 +430,7 @@ export const tools: Tool[] = [
   },
   {
     name: "delete_record",
-    description: "Delete a metadata record after verifying its UUID and title. Requires authentication, explicit confirm='DELETE', and defaults to withBackup=true.",
+    description: "Delete a metadata record after verifying its UUID and title. Requires authentication; if not logged in, call auth_login, complete browser login, then call auth_poll before retrying. Requires explicit confirm='DELETE' and defaults to withBackup=true.",
     inputSchema: {
       type: "object",
       properties: {
@@ -426,7 +458,7 @@ export const tools: Tool[] = [
   },
   {
     name: "upload_file_to_record",
-    description: "Upload a file from your local filesystem directly to a metadata record as an attachment. The file will be uploaded as binary data to GeoNetwork. Requires authentication.",
+    description: "Upload a file from your local filesystem directly to a metadata record as an attachment. The file will be uploaded as binary data to GeoNetwork. Requires authentication; if not logged in, call auth_login, complete browser login, then call auth_poll before retrying.",
     inputSchema: {
       type: "object",
       properties: {

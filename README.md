@@ -4,7 +4,13 @@ A Model Context Protocol (MCP) server that provides tools to interact with a Geo
 
 ## Features
 
-This MCP server provides 21 tools for interacting with GeoNetwork:
+This MCP server provides 25 tools for interacting with GeoNetwork:
+
+### Authentication
+- **auth_status** - Show configured auth mode and current login state
+- **auth_login** - Start or reuse an OIDC Device Code browser login flow
+- **auth_poll** - Poll a pending Device Code login after browser authorization
+- **auth_logout** - Clear local in-memory auth tokens and pending login state
 
 ### Search & Discovery
 - **search_records** - Search for metadata records with full Elasticsearch query support
@@ -134,7 +140,10 @@ OIDC_CLIENT_SECRET=your_client_secret
 
 Behavior:
 
-- The first authenticated tool call prompts with a browser login URL and user code.
+- Use `auth_status` to check whether login is configured and whether a valid token is cached.
+- Use `auth_login` to start or reuse a browser login flow. It returns the verification URL and user code in the MCP tool response.
+- Complete login in the browser, then call `auth_poll` until it returns `authenticated`.
+- Protected tools return a structured `auth_required` response when Device Code login is needed; they do not start browser login implicitly.
 - Tokens are cached in memory for the MCP server process.
 - Refresh tokens are used silently if the identity provider returns them.
 - Env-supplied `OIDC_ACCESS_TOKEN` / `OIDC_REFRESH_TOKEN` values are used only for this process and still expire according to the identity provider's token lifetime.

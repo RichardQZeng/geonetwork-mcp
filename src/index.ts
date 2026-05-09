@@ -15,7 +15,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { tools } from "./tools.js";
-import { ToolHandlers } from "./handlers.js";
+import { ToolAuthRequiredError, ToolHandlers } from "./handlers.js";
 import { createSwaggerSpec, registerSwaggerDocs } from "./swagger.js";
 import { AuthManager, type AuthModeConfig } from "./auth.js";
 
@@ -525,6 +525,10 @@ class GeoNetworkMcpServer {
 
     try {
       const toolHandlers: Record<string, () => Promise<any>> = {
+        auth_status: () => this.handlers.authStatus(),
+        auth_login: () => this.handlers.authLogin(),
+        auth_poll: () => this.handlers.authPoll(),
+        auth_logout: () => this.handlers.authLogout(),
         search_records: () => this.handlers.searchRecords(args),
         get_record: () => this.handlers.getRecord(args),
         get_record_summary: () => this.handlers.getRecordSummary(args),
@@ -556,6 +560,10 @@ class GeoNetworkMcpServer {
 
       return await handler();
     } catch (error: any) {
+      if (error instanceof ToolAuthRequiredError) {
+        return error.response;
+      }
+
       const errorMessage = [
         `Error: ${error.message}`,
         error.response?.status && `Status: ${error.response.status}`,

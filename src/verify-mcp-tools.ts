@@ -121,6 +121,42 @@ const pickTagId = (tags: any): number | undefined => {
   return undefined;
 };
 
+const ensureDeviceCodeAuth = async (): Promise<void> => {
+  if (auth.mode !== "device_code") {
+    return;
+  }
+
+  const status = auth.getStatus();
+  if (status.tokenValid) {
+    return;
+  }
+
+  const login = await auth.startDeviceLogin();
+  console.log("\nComplete Device Code login in a browser:");
+  console.log(login.verificationUriComplete || login.verificationUri);
+  console.log(`User code: ${login.userCode}`);
+  console.log(`Expires at: ${login.expiresAt}`);
+  console.log("Waiting for authorization");
+
+  const startedAt = Date.now();
+  const timeoutMs = Number(process.env.DEVICE_CODE_TIMEOUT_SECONDS || "300") * 1000;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const result = await auth.pollDeviceLogin();
+    if (result.status === "authenticated") {
+      console.log("Device Code authentication succeeded.");
+      return;
+    }
+    if (result.status === "expired" || result.status === "error") {
+      throw new Error(result.message);
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.max(result.retryAfterSeconds || 5, 1) * 1000));
+    process.stderr.write(".");
+  }
+
+  throw new Error("Timed out waiting for Device Code authentication.");
+};
+
 const main = async () => {
   console.log(`Verification mode: ${auth.mode}`);
   console.log(`Source UUID: ${sourceUuid}`);
@@ -145,6 +181,8 @@ const main = async () => {
   const tagsResponse = await recordResult("get_tags", () => handlers.getTags());
   await recordResult("get_regions", () => handlers.getRegions({}));
   await recordResult("search_by_extent", () => handlers.searchByExtent({ minx: -180, miny: -90, maxx: 180, maxy: 90 }));
+
+  await ensureDeviceCodeAuth();
 
   try {
     const duplicateResponse = await recordResult("duplicate_record", () => handlers.duplicateRecord({
